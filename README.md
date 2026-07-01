@@ -74,9 +74,10 @@ cd FrED_experiments/fred
 
 Then install (same for both):
 ```bash
-chmod +x *.sh
-./install.sh
+bash install.sh
 ```
+This enables SPI, installs every required Python library for the system
+`python3`, and creates the hotspot profile — plug and play.
 `FrED_functions.py` must be in `fred/` (it already is in this repo).
 
 > Later, to pull updates on the Pi: `git pull` from the repo folder.
@@ -94,8 +95,8 @@ pip install -r requirements.txt
 **Step 1 — Raspberry Pi:** open the hotspot and start the listener.
 ```bash
 cd fred
-./hotspot_on.sh          # Pi becomes AP at 10.42.0.1 (its normal WiFi pauses)
-./run_experiments.sh     # listener starts; leave this terminal running
+bash hotspot_on.sh          # Pi becomes AP at 10.42.0.1 (its normal WiFi pauses)
+bash run_experiments.sh     # listener starts; leave this terminal running
 ```
 
 **Step 2 — Laptop:** join the `FrED_AP` WiFi (password `fred12345`), then:
@@ -110,7 +111,7 @@ Result saved as `[YourFile]_ExperimentalResults.xlsx` next to your input file.
 **Step 3 — Raspberry Pi:** when finished.
 ```bash
 # press Ctrl+C in the run_experiments.sh terminal to stop the listener
-./hotspot_off.sh         # restore the Pi's normal networking
+bash hotspot_off.sh         # restore the Pi's normal networking
 ```
 
 ### Preview the Excel output without any hardware (laptop)
@@ -127,12 +128,18 @@ The commands above are all you need. This section just explains what they do.
 
 - **Laptop:** the Anaconda base env already has `openpyxl, pandas, matplotlib,
   numpy, pillow` and `tkinter`, so there's nothing to install.
-- **`fred/install.sh`** creates a `--system-site-packages` virtualenv (`.venv`)
-  that reuses the Adafruit/RPi.GPIO stack already driving your motor, and
-  creates the `FrED_AP` hotspot profile with **autoconnect OFF** (so it never
-  comes up on its own and the Pi stays free for everything else).
-- **`FrED_functions.py`** must be in `fred/` (`experiment_runner.py` imports it
-  for `motor_speed` / `filter` / `linearization`). It already is in this repo.
+- **`fred/install.sh`** enables SPI, installs the Adafruit/RPi.GPIO stack for
+  the **system `python3`**, and creates the `FrED_AP` hotspot profile with
+  **autoconnect OFF** (so it never comes up on its own and the Pi stays free
+  for everything else).
+- **`run_experiments.sh` uses the system `python3`** — the same interpreter
+  that runs your validated `motor_control.py` — so the motor and encoder
+  behave identically. (No virtualenv: it would shadow the proven hardware
+  libraries and can stop the motor from being driven.)
+- **`experiment_runner.py`** is a headless port of `motor_control.py`'s control
+  mode: identical pins (`motorPin=5`, encoder select `1`), PWM frequency
+  (`1000 Hz`), PID step, and `FrED_functions` calls (`motor_speed` / `filter` /
+  `linearization`). It just runs for a fixed duration and returns the data.
 
 > Default hotspot: SSID `FrED_AP`, password `fred12345`, Pi IP `10.42.0.1`.
 > Change SSID/password at the top of `install.sh` before running it (or edit
@@ -166,9 +173,17 @@ see the exact layout before touching hardware.
 
 ## Notes & troubleshooting
 
-- **Install needs internet; the hotspot removes it.** Always run `install.sh`
-  *before* `hotspot_on.sh`. To update packages later, run `hotspot_off.sh`
-  first so the Pi is back online.
+- **Install needs internet; the hotspot removes it.** Always run
+  `bash install.sh` *before* `bash hotspot_on.sh`. To update packages later,
+  run `bash hotspot_off.sh` first so the Pi is back online.
+- **Motor doesn't turn on.** The listener prints a per-experiment line like
+  `PWM max=...% rpm final=...`. If `PWM max=0%`, the motor was never driven —
+  check that the **Reference [RPM] is > 0**, that SPI is enabled
+  (`sudo raspi-config nonint do_spi 0`), and that the encoder is wired. Because
+  `run_experiments.sh` uses the **system `python3`** (same as `motor_control.py`),
+  the motor should behave exactly as in your validated script; if
+  `motor_control.py` turns the motor and this doesn't, capture the listener's
+  printed output and compare.
 - **Reference / run time / wait time are the same for all 12 experiments**
   (set once in the app). The motor is driven to 0 % during the wait between
   experiments and on shutdown.
@@ -176,16 +191,8 @@ see the exact layout before touching hardware.
   the listener is running, and try `ping 10.42.0.1`. The firewall on the Pi is
   off by default on Bookworm; if you enabled one, allow TCP 5001.
 - **`FrED_functions.py` not found** on the Pi → copy it into `fred/`.
-- **`ModuleNotFoundError: No module named 'board'`** (or `busio`, `digitalio`,
-  `adafruit_mcp3xxx`, `RPi`, `spidev`) when starting the listener → the venv
-  can't see your system Adafruit stack (it was likely installed under
-  `~/.local`). Install the hardware libs **into the venv** (needs internet, so
-  run `./hotspot_off.sh` first if the hotspot is up):
-  ```bash
-  cd fred
-  ./.venv/bin/pip install -r requirements.txt
-  ```
-  These libs are now in `requirements.txt`, so a fresh `./install.sh` also
-  covers it. If `RPi.GPIO` later errors at runtime on Bookworm, install the
-  drop-in replacement: `./.venv/bin/pip install rpi-lgpio`.
-```
+- **`ModuleNotFoundError` (`board`, `busio`, `adafruit_mcp3xxx`, `RPi`,
+  `spidev`)** when starting the listener → the system `python3` is missing a
+  library. Re-run `bash install.sh` with internet (hotspot off). If
+  `RPi.GPIO` errors at runtime on Bookworm, install the drop-in replacement:
+  `python3 -m pip install --break-system-packages rpi-lgpio`.

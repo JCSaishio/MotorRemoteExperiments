@@ -56,6 +56,16 @@ def handle(conn, addr):
                 float(exp["kp"]), float(exp["ki"]), float(exp["kd"]),
                 reference, run_time)
 
+            # diagnostics: if the motor never turned, PWM stayed ~0
+            pwm = data.get("pwm") or [0]
+            rpm = data.get("rpm") or [0]
+            print(f"    samples={len(data['time'])}  "
+                  f"PWM max={max(pwm):.1f}% min={min(pwm):.1f}%  "
+                  f"rpm final={rpm[-1]:.1f} max={max(rpm):.1f}")
+            if max(pwm) <= 0:
+                print("    WARNING: PWM stayed at 0% - motor was never driven "
+                      "(check reference > 0 and encoder/SPI wiring).")
+
             send_msg(conn, {
                 "type": "result",
                 "index": exp.get("index", i),
