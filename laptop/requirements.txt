@@ -1,0 +1,8 @@
+# Laptop-side requirements (already present in your Anaconda base env).
+# Reinstall only if you use a different Python:
+openpyxl
+pandas
+matplotlib
+numpy
+pillow
+# tkinter ships with Anaconda / standard CPython (no pip install needed)

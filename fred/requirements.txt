@@ -1,0 +1,12 @@
+# FrED (Raspberry Pi) Python requirements.
+#
+# The install script creates the virtual environment with
+# --system-site-packages, so the hardware stack that ALREADY runs your
+# original motor_control.py is reused from the system:
+#   RPi.GPIO, spidev, adafruit-blinka (board/busio/digitalio),
+#   adafruit-circuitpython-mcp3xxx
+#
+# Only pure-Python / non-hardware extras are pinned here. numpy is listed
+# in case your FrED_functions.py needs it inside the venv; if the system
+# already provides it, pip will simply skip it.
+numpy
