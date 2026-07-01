@@ -24,6 +24,7 @@ laptop/                 # runs on your Windows laptop (Anaconda)
   excel_parser.py       #   reads the 'Summary' sheet -> experiments
   comm_client.py        #   TCP/JSON client
   results_writer.py     #   builds [name]_ExperimentalResults.xlsx (+graphs)
+  plant_model.py        #   expected response (plant from compare_all_methods.m)
   demo_preview.py       #   offline preview of the Excel (no Pi needed)
   requirements.txt
 fred/                   # runs on the Raspberry Pi (fred-venv framework)
@@ -179,9 +180,15 @@ deactivate                        # when done
 - **Top-left:** metric, algorithm, reference, Kp/Ki/Kd, run/wait time.
 - **Below that:** achieved **IAE / ITAE / ISE / ITSE** computed from the
   measured run.
-- **Upper-right (next to that block):** *Motor Speed vs Time* (with the
-  reference line) and *Motor Voltage vs Time*.
-- **Below:** the full time-series data table
+- **Right — a 2×2 graph grid:**
+  - top row (**measured**): *Motor Speed vs Time* (with the reference line) and
+    *Motor Voltage vs Time*;
+  - bottom row (**expected / model**): *Expected Motor Speed* and *Expected
+    Motor Voltage*, simulated in Python from the plant in
+    `compare_all_methods.m` (`G(s)=1731.3048/(s²+472.6205 s+3495.7927)`, filtered
+    PID `Tf=1e-3`) using that sheet's Kp/Ki/Kd and reference — so you can compare
+    the real run against what the tuning model predicted (`Vmax=11.5 V` line).
+- **Below (left):** the full time-series data table
   (time, rpm, rpm_ref, motor_input, PWM, voltage, rpm_raw).
 
 ### Preview it now (no Pi needed)

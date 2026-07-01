@@ -4,5 +4,6 @@ openpyxl
 pandas
 matplotlib
 numpy
+scipy
 pillow
 # tkinter ships with Anaconda / standard CPython (no pip install needed)

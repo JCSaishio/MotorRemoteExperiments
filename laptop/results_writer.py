@@ -21,14 +21,20 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.drawing.image import Image as XLImage
 
+import plant_model
+
 
 DATA_HEADERS = ["time [s]", "rpm", "rpm_ref", "motor_input",
                 "PWM [%]", "voltage [V]", "rpm_raw"]
 DATA_KEYS    = ["time", "rpm", "rpm_ref", "motor_input", "pwm", "voltage", "rpm_raw"]
 
-DATA_HEADER_ROW = 19             # row where the data-table header goes
-IMG_ANCHOR_SPEED   = "D1"        # upper-right, next to the header block
-IMG_ANCHOR_VOLTAGE = "K1"
+DATA_HEADER_ROW = 19             # row where the data-table header goes (cols A-G)
+# 2x2 graph grid to the right of the header/data (cols I & Q), measured on top,
+# expected (model) below.
+IMG_ANCHOR_SPEED       = "I1"    # measured motor speed
+IMG_ANCHOR_VOLTAGE     = "Q1"    # measured motor voltage
+IMG_ANCHOR_EXP_SPEED   = "I18"   # expected motor speed (plant model)
+IMG_ANCHOR_EXP_VOLTAGE = "Q18"   # expected motor voltage (plant model)
 
 TITLE_FONT  = Font(bold=True, size=13)
 LABEL_FONT  = Font(bold=True)
@@ -128,14 +134,33 @@ def _write_sheet(ws, result):
         ws.cell(row=r, column=2, value=round(metrics[key], 4))
         r += 1
 
-    # ---- graphs, pinned upper-right next to the block ----
+    # ---- measured graphs (top row of the grid) ----
     speed_png = _make_chart_png(
-        data["time"], data["rpm"], "Motor Speed vs Time", "speed [rpm]",
+        data["time"], data["rpm"], "Motor Speed vs Time (measured)", "speed [rpm]",
         ref=ref, ref_label=f"reference = {ref:g} rpm")
     volt_png = _make_chart_png(
-        data["time"], data["voltage"], "Motor Voltage vs Time", "voltage [V]")
+        data["time"], data["voltage"], "Motor Voltage vs Time (measured)", "voltage [V]")
     ws.add_image(XLImage(speed_png), IMG_ANCHOR_SPEED)
     ws.add_image(XLImage(volt_png), IMG_ANCHOR_VOLTAGE)
+
+    # ---- expected graphs from the plant model (bottom row of the grid) ----
+    tvals = [float(x) for x in data["time"] if x is not None]
+    tfinal = max(tvals) if tvals else 5.0
+    t_model = np.arange(0.0, tfinal + 0.01, 0.01)
+    try:
+        rpm_exp, volt_exp = plant_model.expected_response(
+            float(result["kp"]), float(result["ki"]), float(result["kd"]),
+            ref, t_model)
+        exp_speed_png = _make_chart_png(
+            t_model, rpm_exp, "Expected Motor Speed vs Time (model)", "speed [rpm]",
+            ref=ref, ref_label=f"reference = {ref:g} rpm")
+        exp_volt_png = _make_chart_png(
+            t_model, volt_exp, "Expected Motor Voltage vs Time (model)", "voltage [V]",
+            ref=plant_model.VMAX, ref_label=f"Vmax = {plant_model.VMAX:g} V")
+        ws.add_image(XLImage(exp_speed_png), IMG_ANCHOR_EXP_SPEED)
+        ws.add_image(XLImage(exp_volt_png), IMG_ANCHOR_EXP_VOLTAGE)
+    except Exception as e:                      # never fail the whole workbook
+        ws["I18"] = f"Expected-response model failed: {e}"
 
     # ---- data table ----
     hr = DATA_HEADER_ROW
