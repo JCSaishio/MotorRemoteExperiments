@@ -104,9 +104,11 @@ def main():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
         s.listen(1)
+        mode = "REAL HARDWARE" if er.HARDWARE else "SIMULATION (no Pi hardware detected)"
         print("=" * 60)
         print(" FrED experiment listener")
-        print(f" Listening on {HOST}:{PORT}  (reach it at 10.42.0.1:{PORT})")
+        print(f" Mode      : {mode}")
+        print(f" Listening on {HOST}:{PORT}  (reach it at 192.168.4.1:{PORT})")
         print(" Waiting for the laptop app to connect...  (Ctrl+C to stop)")
         print("=" * 60)
         try:

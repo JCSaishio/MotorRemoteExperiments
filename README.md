@@ -26,18 +26,27 @@ laptop/                 # runs on your Windows laptop (Anaconda)
   results_writer.py     #   builds [name]_ExperimentalResults.xlsx (+graphs)
   demo_preview.py       #   offline preview of the Excel (no Pi needed)
   requirements.txt
-fred/                   # runs on the Raspberry Pi
+fred/                   # runs on the Raspberry Pi (fred-venv framework)
   server.py             #   experiment listener (foreground, Ctrl+C to stop)
-  experiment_runner.py  #   headless PID motor loop (from motor_control.py)
-  install.sh            #   one-time setup: venv + hotspot profile
-  hotspot_on.sh         #   bring hotspot up
-  hotspot_off.sh        #   bring hotspot down
-  run_experiments.sh    #   start the listener
-  requirements.txt
-  FrED_functions.py     #   <-- YOU add this (copy from your existing project)
+  experiment_runner.py  #   headless PID motor loop (pins/PID from motor_control.py)
+  fake_gpio.py          #   RPi.GPIO stand-in for off-Pi testing/simulation
+  setup_install.sh      #   installer: apt deps + fred-venv + pip + SPI + verify
+  setup_hotspot.sh      #   hotspot up / down / status
+  start_experiments.sh  #   activate fred-venv and run the listener
+  requirements.txt      #   pip packages for the venv (RPi.GPIO comes from apt)
+  FrED_functions.py     #   motor_speed / filter / linearization
 Example.xlsx            # sample input (its 'Summary' sheet = 12 gain sets)
 motor_control.py        # original standalone script (unchanged)
 ```
+
+> **Framework note.** The `fred/` side mirrors the main `fred-device`
+> framework: a `fred-venv` created with `--system-site-packages`, with
+> **`RPi.GPIO` installed from apt** (never pip) so the working system GPIO
+> drives the motor. `experiment_runner.py` uses the same pins as
+> `motor_control.py` / `spooler.py` (`PWM_PIN=5`, encoder select `1`,
+> `1000 Hz`), plus the spooler's RPM-glitch guard and integral anti-windup.
+> Off a Pi it auto-falls back to a motor **simulation** so the pipeline can be
+> tested on any machine.
 
 ---
 
@@ -74,10 +83,11 @@ cd FrED_experiments/fred
 
 Then install (same for both):
 ```bash
-bash install.sh
+bash setup_install.sh
 ```
-This enables SPI, installs every required Python library for the system
-`python3`, and creates the hotspot profile — plug and play.
+This installs the apt system packages (incl. `python3-rpi.gpio`), creates the
+`fred-venv` virtual environment with `--system-site-packages`, pip-installs the
+rest into it, enables SPI, and verifies every import — plug and play.
 `FrED_functions.py` must be in `fred/` (it already is in this repo).
 
 > Later, to pull updates on the Pi: `git pull` from the repo folder.
@@ -95,8 +105,8 @@ pip install -r requirements.txt
 **Step 1 — Raspberry Pi:** open the hotspot and start the listener.
 ```bash
 cd fred
-bash hotspot_on.sh          # Pi becomes AP at 10.42.0.1 (its normal WiFi pauses)
-bash run_experiments.sh     # listener starts; leave this terminal running
+bash setup_hotspot.sh          # Pi becomes AP at 192.168.4.1 (its normal WiFi pauses)
+bash start_experiments.sh      # activates fred-venv + starts listener; leave it running
 ```
 
 **Step 2 — Laptop:** join the `FrED_AP` WiFi (password `fred12345`), then:
@@ -105,13 +115,13 @@ cd laptop
 python app.py
 ```
 In the window: **Browse** to your Excel → set **Run time**, **Wait time**,
-**Reference [RPM]** → **Run experiments**.
+**Reference [RPM]** (host `192.168.4.1`, port `5001`) → **Run experiments**.
 Result saved as `[YourFile]_ExperimentalResults.xlsx` next to your input file.
 
 **Step 3 — Raspberry Pi:** when finished.
 ```bash
-# press Ctrl+C in the run_experiments.sh terminal to stop the listener
-bash hotspot_off.sh         # restore the Pi's normal networking
+# press Ctrl+C in the start_experiments.sh terminal to stop the listener
+bash setup_hotspot.sh down     # restore the Pi's normal networking
 ```
 
 ### Preview the Excel output without any hardware (laptop)
@@ -128,23 +138,36 @@ The commands above are all you need. This section just explains what they do.
 
 - **Laptop:** the Anaconda base env already has `openpyxl, pandas, matplotlib,
   numpy, pillow` and `tkinter`, so there's nothing to install.
-- **`fred/install.sh`** enables SPI, installs the Adafruit/RPi.GPIO stack for
-  the **system `python3`**, and creates the `FrED_AP` hotspot profile with
-  **autoconnect OFF** (so it never comes up on its own and the Pi stays free
-  for everything else).
-- **`run_experiments.sh` uses the system `python3`** — the same interpreter
-  that runs your validated `motor_control.py` — so the motor and encoder
-  behave identically. (No virtualenv: it would shadow the proven hardware
-  libraries and can stop the motor from being driven.)
+- **`setup_install.sh`** mirrors the main `fred-device` installer: apt installs
+  `python3-rpi.gpio` (+ venv/pip/dev, `libatlas-base-dev`), creates `fred-venv`
+  **with `--system-site-packages`** (so the apt `RPi.GPIO` is visible), pip
+  installs `numpy` / `adafruit-blinka` / `adafruit-circuitpython-mcp3xxx` /
+  `spidev` into it, enables SPI, and verifies every import.
+- **Why not pip-install `RPi.GPIO`?** Pip-installing it into the venv shadows
+  the working apt build and can stop the motor from being driven — this was the
+  actual cause of the "motor didn't turn on" failure. The venv reuses the apt
+  `RPi.GPIO` instead, exactly like the main framework.
+- **`start_experiments.sh`** activates `fred-venv` and runs `server.py`.
 - **`experiment_runner.py`** is a headless port of `motor_control.py`'s control
-  mode: identical pins (`motorPin=5`, encoder select `1`), PWM frequency
-  (`1000 Hz`), PID step, and `FrED_functions` calls (`motor_speed` / `filter` /
-  `linearization`). It just runs for a fixed duration and returns the data.
+  mode: identical pins (`PWM_PIN=5`, encoder select `1`), `1000 Hz` PWM, PID
+  step, and `FrED_functions` calls (`motor_speed` / `filter` / `linearization`),
+  plus the `spooler.py` RPM-glitch guard and integral anti-windup. It runs a
+  fixed duration and returns the data. Off a Pi it simulates the motor.
+- **`setup_hotspot.sh`** creates the `FrED_AP` profile with **autoconnect OFF**
+  (fixed IP `192.168.4.1`), so the hotspot only comes up when you ask and the
+  Pi stays free for everything else. `down` / `status` subcommands included.
 
-> Default hotspot: SSID `FrED_AP`, password `fred12345`, Pi IP `10.42.0.1`.
-> Change SSID/password at the top of `install.sh` before running it (or edit
-> the profile later with `nmcli connection modify FrED_AP ...`).
-> The app defaults its host/port to `10.42.0.1:5001`.
+> Default hotspot: SSID `FrED_AP`, password `fred12345`, Pi IP `192.168.4.1`.
+> Change SSID/password at the top of `setup_hotspot.sh` (keep them in sync with
+> `laptop/comm_client.py`). The app defaults its host/port to `192.168.4.1:5001`.
+
+### Running it manually with the venv (on the Pi)
+```bash
+cd fred
+source fred-venv/bin/activate     # prompt shows (fred-venv)
+python server.py                  # same as start_experiments.sh
+deactivate                        # when done
+```
 
 ---
 
@@ -174,25 +197,29 @@ see the exact layout before touching hardware.
 ## Notes & troubleshooting
 
 - **Install needs internet; the hotspot removes it.** Always run
-  `bash install.sh` *before* `bash hotspot_on.sh`. To update packages later,
-  run `bash hotspot_off.sh` first so the Pi is back online.
+  `bash setup_install.sh` *before* `bash setup_hotspot.sh`. To update packages
+  later, run `bash setup_hotspot.sh down` first so the Pi is back online.
+- **Listener says `Mode : SIMULATION`.** The Pi hardware libraries didn't
+  import, so it's simulating the motor (fine on a laptop, wrong on the Pi). On
+  the Pi, re-run `bash setup_install.sh` and confirm the import check passes.
 - **Motor doesn't turn on.** The listener prints a per-experiment line like
   `PWM max=...% rpm final=...`. If `PWM max=0%`, the motor was never driven —
   check that the **Reference [RPM] is > 0**, that SPI is enabled
-  (`sudo raspi-config nonint do_spi 0`), and that the encoder is wired. Because
-  `run_experiments.sh` uses the **system `python3`** (same as `motor_control.py`),
-  the motor should behave exactly as in your validated script; if
-  `motor_control.py` turns the motor and this doesn't, capture the listener's
-  printed output and compare.
+  (`sudo raspi-config nonint do_spi 0`), and that the encoder is wired. The
+  runner uses the same pins/PID as your validated `motor_control.py`, run from
+  `fred-venv` which reuses the apt `RPi.GPIO`; if `motor_control.py` turns the
+  motor and this doesn't, capture the listener output and compare.
 - **Reference / run time / wait time are the same for all 12 experiments**
   (set once in the app). The motor is driven to 0 % during the wait between
   experiments and on shutdown.
 - **Can't connect from the laptop?** Confirm you're on the `FrED_AP` network,
-  the listener is running, and try `ping 10.42.0.1`. The firewall on the Pi is
-  off by default on Bookworm; if you enabled one, allow TCP 5001.
+  the listener is running, and try `ping 192.168.4.1`. The firewall on the Pi
+  is off by default on Bookworm; if you enabled one, allow TCP 5001.
 - **`FrED_functions.py` not found** on the Pi → copy it into `fred/`.
-- **`ModuleNotFoundError` (`board`, `busio`, `adafruit_mcp3xxx`, `RPi`,
-  `spidev`)** when starting the listener → the system `python3` is missing a
-  library. Re-run `bash install.sh` with internet (hotspot off). If
-  `RPi.GPIO` errors at runtime on Bookworm, install the drop-in replacement:
-  `python3 -m pip install --break-system-packages rpi-lgpio`.
+- **`cannot import RPi.GPIO` / import check fails** → the apt package is
+  missing. Re-run `bash setup_install.sh` (it runs `apt install
+  python3-rpi.gpio`) with internet. If `RPi.GPIO` errors at runtime on
+  Bookworm, install the drop-in replacement into the venv:
+  `source fred-venv/bin/activate && pip install rpi-lgpio`.
+- **Re-running `setup_install.sh` is safe** — it reuses an existing `fred-venv`
+  and only installs what's missing.

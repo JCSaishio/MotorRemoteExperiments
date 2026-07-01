@@ -1,16 +1,15 @@
-# FrED (Raspberry Pi) Python requirements, installed into the venv.
+# Python packages installed by pip INTO the fred-venv virtual environment.
 #
-# The venv is created with --system-site-packages, but the hardware stack is
-# also pinned here so the venv works even when the system copies live in a
-# place the venv can't see (e.g. a --user install under ~/.local).
-#
-# These provide the modules experiment_runner.py imports:
-#   board / busio / digitalio      -> Adafruit-Blinka
-#   adafruit_mcp3xxx               -> adafruit-circuitpython-mcp3xxx
-#   RPi.GPIO                       -> RPi.GPIO
-#   spidev                         -> spidev
-Adafruit-Blinka
-adafruit-circuitpython-mcp3xxx
-RPi.GPIO
-spidev
+# NOTE: RPi.GPIO is intentionally NOT listed here. On a Raspberry Pi it is
+# installed from apt (python3-rpi.gpio) by setup_install.sh and made visible to
+# the venv via --system-site-packages. Pip-installing RPi.GPIO into the venv can
+# SHADOW the working apt build and stop the motor from being driven, so we use
+# the apt version instead (same approach as the main fred-device framework).
+
+# --- Math ---
 numpy
+
+# --- Pi hardware: CircuitPython layer (SPI/pins) + MCP3008 ADC + SPI ---
+adafruit-blinka
+adafruit-circuitpython-mcp3xxx
+spidev

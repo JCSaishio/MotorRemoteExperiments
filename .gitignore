@@ -4,6 +4,10 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+fred-venv/
+
+# Reference project (kept locally, not part of this repo)
+fred-device-external-cv-pi4v6/
 
 # Excel lock/temp files
 ~$*.xlsx

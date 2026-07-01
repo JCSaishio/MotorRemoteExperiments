@@ -9,7 +9,7 @@ import json
 import socket
 
 
-DEFAULT_HOST = "10.42.0.1"   # Pi's address when the hotspot is up
+DEFAULT_HOST = "192.168.4.1"   # Pi's fixed address when the hotspot is up
 DEFAULT_PORT = 5001
 
 
