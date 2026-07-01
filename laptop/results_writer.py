@@ -97,7 +97,7 @@ def _safe_sheet_name(name, used):
     return name
 
 
-def _write_sheet(ws, result):
+def _write_sheet(ws, result, model=None):
     data = result["data"]
     ref  = float(result["reference"])
     metrics = compute_metrics(data["time"], data["rpm"], ref)
@@ -147,16 +147,27 @@ def _write_sheet(ws, result):
     tvals = [float(x) for x in data["time"] if x is not None]
     tfinal = max(tvals) if tvals else 5.0
     t_model = np.arange(0.0, tfinal + 0.01, 0.01)
+
+    # optional edited plant transfer function from the GUI
+    if model:
+        plant_num = [float(model["num"])]
+        plant_den = [1.0, float(model["a1"]), float(model["a0"])]
+        Tf   = float(model["Tf"])
+        vmax = float(model["vmax"])
+    else:
+        plant_num = plant_den = Tf = None
+        vmax = plant_model.VMAX
+
     try:
         rpm_exp, volt_exp = plant_model.expected_response(
             float(result["kp"]), float(result["ki"]), float(result["kd"]),
-            ref, t_model)
+            ref, t_model, plant_num=plant_num, plant_den=plant_den, Tf=Tf)
         exp_speed_png = _make_chart_png(
             t_model, rpm_exp, "Expected Motor Speed vs Time (model)", "speed [rpm]",
             ref=ref, ref_label=f"reference = {ref:g} rpm")
         exp_volt_png = _make_chart_png(
             t_model, volt_exp, "Expected Motor Voltage vs Time (model)", "voltage [V]",
-            ref=plant_model.VMAX, ref_label=f"Vmax = {plant_model.VMAX:g} V")
+            ref=vmax, ref_label=f"Vmax = {vmax:g} V")
         ws.add_image(XLImage(exp_speed_png), IMG_ANCHOR_EXP_SPEED)
         ws.add_image(XLImage(exp_volt_png), IMG_ANCHOR_EXP_VOLTAGE)
     except Exception as e:                      # never fail the whole workbook
@@ -183,8 +194,13 @@ def _write_sheet(ws, result):
         ws.column_dimensions[col].width = 12
 
 
-def build_results_workbook(results, out_path):
-    """results: list of 'result' dicts from comm_client. Writes out_path."""
+def build_results_workbook(results, out_path, model=None):
+    """results: list of 'result' dicts from comm_client. Writes out_path.
+
+    model (optional): edited plant transfer-function parameters from the GUI
+    ({num, a1, a0, Tf, vmax}) for the expected-response graphs. When None, the
+    defaults from compare_all_methods.m are used.
+    """
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # drop the default empty sheet
 
@@ -193,7 +209,7 @@ def build_results_workbook(results, out_path):
     for res in ordered:
         name = _safe_sheet_name(f"{res['metric']}_{res['algorithm']}", used)
         ws = wb.create_sheet(title=name)
-        _write_sheet(ws, res)
+        _write_sheet(ws, res, model)
 
     wb.save(out_path)
     return out_path

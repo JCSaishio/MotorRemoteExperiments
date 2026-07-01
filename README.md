@@ -188,6 +188,9 @@ deactivate                        # when done
     `compare_all_methods.m` (`G(s)=1731.3048/(s²+472.6205 s+3495.7927)`, filtered
     PID `Tf=1e-3`) using that sheet's Kp/Ki/Kd and reference — so you can compare
     the real run against what the tuning model predicted (`Vmax=11.5 V` line).
+    The **plant transfer-function parameters** (`num`, `a1`, `a0`, `Tf`, `Vmax`)
+    are **editable in the app** (panel 3) if you want to try a different model;
+    the **PID gains always come from the Excel** ('Summary' sheet is king).
 - **Below (left):** the full time-series data table
   (time, rpm, rpm_ref, motor_input, PWM, voltage, rpm_raw).
 

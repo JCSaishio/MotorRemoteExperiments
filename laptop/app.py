@@ -1,9 +1,11 @@
 """FrED Motor Remote Experiments - laptop desktop app.
 
-Pick an Excel file (with a 'Summary' sheet of PID gains), set run time, wait
-time and reference RPM, then Run. The app connects to the FrED listener over
-the Pi's hotspot, runs the 12 experiments, and writes
-'[UploadedName]_ExperimentalResults.xlsx' with one sheet + graphs per run.
+Pick an Excel file (its 'Summary' sheet is the source of truth for the PID
+gains Kp/Ki/Kd), set run time, wait time and reference RPM, optionally adjust
+the plant transfer-function parameters used for the expected-response graphs,
+then Run. The app connects to the FrED listener over the Pi's hotspot, runs the
+experiments, and writes '[UploadedName]_ExperimentalResults.xlsx' with one
+sheet + graphs per run.
 """
 
 import os
@@ -15,14 +17,15 @@ from tkinter import ttk, filedialog, messagebox
 import excel_parser
 import comm_client
 import results_writer
+import plant_model
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("FrED Motor Remote Experiments")
-        self.geometry("640x560")
-        self.resizable(False, True)
+        self.geometry("680x660")
+        self.minsize(660, 620)
 
         self.xlsx_path = tk.StringVar()
         self.run_time  = tk.StringVar(value="30")
@@ -30,6 +33,15 @@ class App(tk.Tk):
         self.reference = tk.StringVar(value="45")
         self.host      = tk.StringVar(value=comm_client.DEFAULT_HOST)
         self.port      = tk.StringVar(value=str(comm_client.DEFAULT_PORT))
+
+        # Plant transfer-function parameters for the expected-response graphs.
+        # G(s) = num / (s^2 + a1*s + a0); filtered-derivative PID time const Tf;
+        # motor voltage limit Vmax. Defaults come from compare_all_methods.m.
+        self.tf_num  = tk.StringVar(value=str(plant_model.PLANT_NUM[0]))
+        self.tf_a1   = tk.StringVar(value=str(plant_model.PLANT_DEN[1]))
+        self.tf_a0   = tk.StringVar(value=str(plant_model.PLANT_DEN[2]))
+        self.tf_tf   = tk.StringVar(value=str(plant_model.TF_DERIV))
+        self.tf_vmax = tk.StringVar(value=str(plant_model.VMAX))
 
         self.experiments = []
         self.msg_queue = queue.Queue()
@@ -42,9 +54,9 @@ class App(tk.Tk):
     def _build_ui(self):
         pad = {"padx": 8, "pady": 4}
 
-        frm = ttk.LabelFrame(self, text="1. Experiment file")
+        frm = ttk.LabelFrame(self, text="1. Experiment file (Summary sheet = PID gains)")
         frm.pack(fill="x", **pad)
-        ttk.Entry(frm, textvariable=self.xlsx_path, width=58).grid(row=0, column=0, padx=6, pady=6)
+        ttk.Entry(frm, textvariable=self.xlsx_path, width=60).grid(row=0, column=0, padx=6, pady=6)
         ttk.Button(frm, text="Browse...", command=self._browse).grid(row=0, column=1, padx=6)
         self.file_info = ttk.Label(frm, text="No file loaded.")
         self.file_info.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
@@ -58,7 +70,25 @@ class App(tk.Tk):
         ttk.Label(frm2, text="Reference [RPM]:").grid(row=0, column=4, sticky="e", padx=6)
         ttk.Entry(frm2, textvariable=self.reference, width=10).grid(row=0, column=5, sticky="w")
 
-        frm3 = ttk.LabelFrame(self, text="3. FrED connection")
+        # ---- editable plant transfer function (expected-response graphs) ----
+        frm_tf = ttk.LabelFrame(
+            self, text="3. Plant model for expected-response graphs   "
+                       "G(s) = num / (s² + a1·s + a0)")
+        frm_tf.pack(fill="x", **pad)
+        ttk.Label(frm_tf, text="num:").grid(row=0, column=0, sticky="e", padx=6, pady=6)
+        ttk.Entry(frm_tf, textvariable=self.tf_num, width=13).grid(row=0, column=1, sticky="w")
+        ttk.Label(frm_tf, text="a1:").grid(row=0, column=2, sticky="e", padx=6)
+        ttk.Entry(frm_tf, textvariable=self.tf_a1, width=13).grid(row=0, column=3, sticky="w")
+        ttk.Label(frm_tf, text="a0:").grid(row=0, column=4, sticky="e", padx=6)
+        ttk.Entry(frm_tf, textvariable=self.tf_a0, width=13).grid(row=0, column=5, sticky="w")
+        ttk.Label(frm_tf, text="Tf [s]:").grid(row=1, column=0, sticky="e", padx=6, pady=6)
+        ttk.Entry(frm_tf, textvariable=self.tf_tf, width=13).grid(row=1, column=1, sticky="w")
+        ttk.Label(frm_tf, text="Vmax [V]:").grid(row=1, column=2, sticky="e", padx=6)
+        ttk.Entry(frm_tf, textvariable=self.tf_vmax, width=13).grid(row=1, column=3, sticky="w")
+        ttk.Button(frm_tf, text="Reset defaults", command=self._reset_tf).grid(
+            row=1, column=5, padx=6, sticky="w")
+
+        frm3 = ttk.LabelFrame(self, text="4. FrED connection")
         frm3.pack(fill="x", **pad)
         ttk.Label(frm3, text="Pi host:").grid(row=0, column=0, sticky="e", padx=6, pady=6)
         ttk.Entry(frm3, textvariable=self.host, width=16).grid(row=0, column=1, sticky="w")
@@ -73,11 +103,27 @@ class App(tk.Tk):
 
         logf = ttk.LabelFrame(self, text="Log")
         logf.pack(fill="both", expand=True, **pad)
-        self.log = tk.Text(logf, height=12, wrap="word", state="disabled")
+        self.log = tk.Text(logf, height=9, wrap="word", state="disabled")
         self.log.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
         sb = ttk.Scrollbar(logf, command=self.log.yview)
         sb.pack(side="right", fill="y", pady=6)
         self.log.config(yscrollcommand=sb.set)
+
+    def _reset_tf(self):
+        self.tf_num.set(str(plant_model.PLANT_NUM[0]))
+        self.tf_a1.set(str(plant_model.PLANT_DEN[1]))
+        self.tf_a0.set(str(plant_model.PLANT_DEN[2]))
+        self.tf_tf.set(str(plant_model.TF_DERIV))
+        self.tf_vmax.set(str(plant_model.VMAX))
+
+    def _read_model(self):
+        return {
+            "num":  float(self.tf_num.get()),
+            "a1":   float(self.tf_a1.get()),
+            "a0":   float(self.tf_a0.get()),
+            "Tf":   float(self.tf_tf.get()),
+            "vmax": float(self.tf_vmax.get()),
+        }
 
     # ---------------- actions ----------------
     def _browse(self):
@@ -112,6 +158,12 @@ class App(tk.Tk):
             messagebox.showerror("Invalid input",
                                  "Run time, wait time, reference and port must be numbers.")
             return
+        try:
+            model = self._read_model()
+        except ValueError:
+            messagebox.showerror("Invalid plant model",
+                                 "Plant model fields (num, a1, a0, Tf, Vmax) must be numbers.")
+            return
         host = self.host.get().strip()
 
         self.run_btn.config(state="disabled")
@@ -121,11 +173,11 @@ class App(tk.Tk):
 
         self.worker = threading.Thread(
             target=self._run_job,
-            args=(host, port, run_time, wait_time, reference),
+            args=(host, port, run_time, wait_time, reference, model),
             daemon=True)
         self.worker.start()
 
-    def _run_job(self, host, port, run_time, wait_time, reference):
+    def _run_job(self, host, port, run_time, wait_time, reference, model):
         results = []
 
         def on_progress(msg):
@@ -145,7 +197,7 @@ class App(tk.Tk):
                 on_progress=on_progress, on_result=on_result, timeout=15)
             self.msg_queue.put(("log", "All experiments finished. Building Excel..."))
             out_path = results_writer.default_output_name(self.xlsx_path.get())
-            results_writer.build_results_workbook(results, out_path)
+            results_writer.build_results_workbook(results, out_path, model=model)
             self.msg_queue.put(("done", out_path))
         except Exception as e:
             self.msg_queue.put(("error", str(e)))

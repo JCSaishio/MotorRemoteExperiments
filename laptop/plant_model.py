@@ -39,15 +39,22 @@ def _pid_num_den(kp, ki, kd, Tf=TF_DERIV):
     return num, den
 
 
-def expected_response(kp, ki, kd, reference_rpm, t):
+def expected_response(kp, ki, kd, reference_rpm, t,
+                      plant_num=None, plant_den=None, Tf=None):
     """Return (rpm_expected, voltage_expected) over the time vector `t`.
 
     Mirrors the MATLAB: y = r*step(T); plot y*rads2rpm  ->  Reference_RPM*step(T)
     and                 u = r*step(Tu) with r in rad/s.
+
+    plant_num / plant_den / Tf override the defaults (used by the GUI so the
+    plant transfer function can be edited without changing the source of truth
+    for the PID gains, which is the Excel file).
     """
     t = np.asarray(t, dtype=float)
-    numG, denG = PLANT_NUM, PLANT_DEN
-    numC, denC = _pid_num_den(kp, ki, kd)
+    numG = PLANT_NUM if plant_num is None else plant_num
+    denG = PLANT_DEN if plant_den is None else plant_den
+    Tf   = TF_DERIV  if Tf is None else Tf
+    numC, denC = _pid_num_den(kp, ki, kd, Tf)
 
     numCG = np.polymul(numC, numG)
     denCG = np.polymul(denC, denG)
