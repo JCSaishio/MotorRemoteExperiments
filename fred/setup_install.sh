@@ -41,6 +41,27 @@ if [ ! -f "$PROJECT_DIR/FrED_functions.py" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 0b. Make sure the clock is correct, or apt rejects the repo metadata with
+#     "Release file ... is not valid yet" (a Pi with no RTC boots behind).
+# ---------------------------------------------------------------------------
+if command -v timedatectl >/dev/null 2>&1; then
+  printf "\n[0b] Syncing system clock (NTP)...\n"
+  sudo timedatectl set-ntp true 2>/dev/null || true
+  for _ in $(seq 1 10); do
+    if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ]; then
+      printf "  Clock synchronized: %s\n" "$(date)"
+      break
+    fi
+    sleep 2
+  done
+  if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" != "yes" ]; then
+    printf "  Clock not synchronized yet. If apt reports 'Release file ... is not\n"
+    printf "  valid yet', set the date manually, e.g.:\n"
+    printf "      sudo date -s \"$(date +%%Y-%%m-%%d) 12:00:00\"\n"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 1. System packages (apt)
 # ---------------------------------------------------------------------------
 printf "\n[1/5] Installing system packages with apt (sudo may prompt for your password)...\n"
