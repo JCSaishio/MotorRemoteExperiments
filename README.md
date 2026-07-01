@@ -176,4 +176,16 @@ see the exact layout before touching hardware.
   the listener is running, and try `ping 10.42.0.1`. The firewall on the Pi is
   off by default on Bookworm; if you enabled one, allow TCP 5001.
 - **`FrED_functions.py` not found** on the Pi → copy it into `fred/`.
+- **`ModuleNotFoundError: No module named 'board'`** (or `busio`, `digitalio`,
+  `adafruit_mcp3xxx`, `RPi`, `spidev`) when starting the listener → the venv
+  can't see your system Adafruit stack (it was likely installed under
+  `~/.local`). Install the hardware libs **into the venv** (needs internet, so
+  run `./hotspot_off.sh` first if the hotspot is up):
+  ```bash
+  cd fred
+  ./.venv/bin/pip install -r requirements.txt
+  ```
+  These libs are now in `requirements.txt`, so a fresh `./install.sh` also
+  covers it. If `RPi.GPIO` later errors at runtime on Bookworm, install the
+  drop-in replacement: `./.venv/bin/pip install rpi-lgpio`.
 ```

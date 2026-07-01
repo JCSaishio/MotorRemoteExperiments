@@ -1,0 +1,4 @@
+# Force LF for scripts that run on the Raspberry Pi (Linux), so cloning from
+# Windows never introduces CRLF that would break the shebang/interpreter.
+*.sh   text eol=lf
+*.py   text eol=lf
