@@ -9,12 +9,10 @@ fred-venv/
 # Reference project (kept locally, not part of this repo)
 fred-device-external-cv-pi4v6/
 
-# Excel lock/temp files
-~$*.xlsx
-
-# Generated experiment results / preview
-*_ExperimentalResults.xlsx
-*_ExperimentalResults_DEMO.xlsx
+# Excel files are experiment data (inputs, results, previews, lock files) and
+# stay out of the repo. Example.xlsx is the one tracked exception (sample input).
+*.xlsx
+!Example.xlsx
 
 # OS
 .DS_Store

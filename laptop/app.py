@@ -18,6 +18,7 @@ import excel_parser
 import comm_client
 import results_writer
 import plant_model
+import sampling_validator
 
 
 class App(tk.Tk):
@@ -27,12 +28,13 @@ class App(tk.Tk):
         self.geometry("680x660")
         self.minsize(660, 620)
 
-        self.xlsx_path = tk.StringVar()
-        self.run_time  = tk.StringVar(value="30")
-        self.wait_time = tk.StringVar(value="5")
-        self.reference = tk.StringVar(value="45")
-        self.host      = tk.StringVar(value=comm_client.DEFAULT_HOST)
-        self.port      = tk.StringVar(value=str(comm_client.DEFAULT_PORT))
+        self.xlsx_path   = tk.StringVar()
+        self.run_time    = tk.StringVar(value="30")
+        self.wait_time   = tk.StringVar(value="5")
+        self.reference   = tk.StringVar(value="45")
+        self.sample_freq = tk.StringVar(value="50")
+        self.host        = tk.StringVar(value=comm_client.DEFAULT_HOST)
+        self.port        = tk.StringVar(value=str(comm_client.DEFAULT_PORT))
 
         # Plant transfer-function parameters for the expected-response graphs.
         # G(s) = num / (s^2 + a1*s + a0); filtered-derivative PID time const Tf;
@@ -69,6 +71,10 @@ class App(tk.Tk):
         ttk.Entry(frm2, textvariable=self.wait_time, width=10).grid(row=0, column=3, sticky="w")
         ttk.Label(frm2, text="Reference [RPM]:").grid(row=0, column=4, sticky="e", padx=6)
         ttk.Entry(frm2, textvariable=self.reference, width=10).grid(row=0, column=5, sticky="w")
+        ttk.Label(frm2, text="Sampling freq [Hz]:").grid(row=1, column=0, sticky="e", padx=6, pady=(0, 6))
+        ttk.Entry(frm2, textvariable=self.sample_freq, width=10).grid(row=1, column=1, sticky="w", pady=(0, 6))
+        ttk.Label(frm2, text="(control-loop rate on the Pi; validated after each run)"
+                  ).grid(row=1, column=2, columnspan=4, sticky="w", padx=6, pady=(0, 6))
 
         # ---- editable plant transfer function (expected-response graphs) ----
         frm_tf = ttk.LabelFrame(
@@ -150,13 +156,20 @@ class App(tk.Tk):
             messagebox.showwarning("No file", "Load a valid experiment file first.")
             return
         try:
-            run_time  = float(self.run_time.get())
-            wait_time = float(self.wait_time.get())
-            reference = float(self.reference.get())
-            port      = int(self.port.get())
+            run_time    = float(self.run_time.get())
+            wait_time   = float(self.wait_time.get())
+            reference   = float(self.reference.get())
+            sample_freq = float(self.sample_freq.get())
+            port        = int(self.port.get())
         except ValueError:
             messagebox.showerror("Invalid input",
-                                 "Run time, wait time, reference and port must be numbers.")
+                                 "Run time, wait time, reference, sampling frequency "
+                                 "and port must be numbers.")
+            return
+        if not (0 < sample_freq <= 1000):
+            messagebox.showerror("Invalid sampling frequency",
+                                 "Sampling frequency must be between 0 and 1000 Hz "
+                                 "(the motor loop was validated at 50 Hz).")
             return
         try:
             model = self._read_model()
@@ -173,11 +186,11 @@ class App(tk.Tk):
 
         self.worker = threading.Thread(
             target=self._run_job,
-            args=(host, port, run_time, wait_time, reference, model),
+            args=(host, port, run_time, wait_time, reference, sample_freq, model),
             daemon=True)
         self.worker.start()
 
-    def _run_job(self, host, port, run_time, wait_time, reference, model):
+    def _run_job(self, host, port, run_time, wait_time, reference, sample_freq, model):
         results = []
 
         def on_progress(msg):
@@ -186,14 +199,18 @@ class App(tk.Tk):
                 self.msg_queue.put(("progress", msg.get("experiment", 0) - 1))
 
         def on_result(msg):
+            msg.setdefault("sample_rate", sample_freq)  # older listeners don't echo it
             results.append(msg)
             self.msg_queue.put(("log", f"  -> got data for {msg['metric']}/{msg['algorithm']} "
                                        f"({len(msg['data']['time'])} samples)"))
+            stats = sampling_validator.analyze(msg["data"]["time"], sample_freq)
+            self.msg_queue.put(("log", "     " + stats["message"]))
             self.msg_queue.put(("progress", msg.get("index", len(results))))
 
         try:
             comm_client.run_job(
                 host, port, run_time, wait_time, reference, self.experiments,
+                sample_rate=sample_freq,
                 on_progress=on_progress, on_result=on_result, timeout=15)
             self.msg_queue.put(("log", "All experiments finished. Building Excel..."))
             out_path = results_writer.default_output_name(self.xlsx_path.get())

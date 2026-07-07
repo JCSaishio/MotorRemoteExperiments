@@ -2,3 +2,6 @@
 # Windows never introduces CRLF that would break the shebang/interpreter.
 *.sh   text eol=lf
 *.py   text eol=lf
+
+# Windows batch launchers must stay CRLF
+*.bat  text eol=crlf

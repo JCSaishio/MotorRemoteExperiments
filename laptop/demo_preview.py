@@ -38,7 +38,7 @@ def main():
     for e in exps:
         results.append(dict(index=e["index"], metric=e["metric"], algorithm=e["algorithm"],
                             kp=e["kp"], ki=e["ki"], kd=e["kd"], reference=reference,
-                            run_time=run_time, wait_time=5.0,
+                            run_time=run_time, wait_time=5.0, sample_rate=50.0,
                             data=fake_run(reference, run_time)))
     base = os.path.splitext(os.path.basename(src))[0]
     out = os.path.join(os.path.dirname(os.path.abspath(src)), f"{base}_ExperimentalResults_DEMO.xlsx")

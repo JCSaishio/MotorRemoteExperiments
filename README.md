@@ -20,11 +20,13 @@ Laptop (Windows, Anaconda)                 Raspberry Pi 4 (Bookworm)
 
 ```
 laptop/                 # runs on your Windows laptop (Anaconda)
+  FrED_App.bat          #   double-click launcher (opens the app, no console)
   app.py                #   Tkinter GUI
   excel_parser.py       #   reads the 'Summary' sheet -> experiments
   comm_client.py        #   TCP/JSON client
   results_writer.py     #   builds [name]_ExperimentalResults.xlsx (+graphs)
   plant_model.py        #   expected response (plant from compare_all_methods.m)
+  sampling_validator.py #   checks the achieved sampling frequency vs requested
   demo_preview.py       #   offline preview of the Excel (no Pi needed)
   requirements.txt
 fred/                   # runs on the Raspberry Pi (fred-venv framework)
@@ -110,14 +112,25 @@ bash setup_hotspot.sh          # Pi becomes AP at 192.168.4.1 (its normal WiFi p
 bash start_experiments.sh      # activates fred-venv + starts listener; leave it running
 ```
 
-**Step 2 — Laptop:** join the `FrED_AP` WiFi (password `fred12345`), then:
-```bash
-cd laptop
-python app.py
-```
+**Step 2 — Laptop:** join the `FrED_AP` WiFi (password `fred12345`), then
+**double-click `laptop/FrED_App.bat`** (it finds your Anaconda/Python and opens
+the app with no console). Running `python app.py` from a console still works
+too.
+
 In the window: **Browse** to your Excel → set **Run time**, **Wait time**,
-**Reference [RPM]** (host `192.168.4.1`, port `5001`) → **Run experiments**.
+**Reference [RPM]**, **Sampling freq [Hz]** (host `192.168.4.1`, port `5001`)
+→ **Run experiments**.
 Result saved as `[YourFile]_ExperimentalResults.xlsx` next to your input file.
+
+> **Sampling frequency.** The value you enter is the control-loop rate the Pi
+> runs each experiment at (default 50 Hz, the rate `motor_control.py` was
+> validated at). After every experiment the app checks the achieved rate from
+> the returned timestamps and logs `Sampling OK` or `Sampling WARNING`; each
+> result sheet also gets a **Sampling validation** block (requested vs achieved
+> Hz, deviation, max period, OK/WARNING). A run passes if the average achieved
+> frequency is within 5% of the request and no more than 2% of the periods were
+> over 1.5x the nominal period. Note the RPM smoothing filter uses a fixed
+> alpha = 0.3, so changing the rate also changes its effective cutoff.
 
 **Step 3 — Raspberry Pi:** when finished.
 ```bash
@@ -177,9 +190,11 @@ deactivate                        # when done
 `[YourFile]_ExperimentalResults.xlsx` — one sheet per experiment
 (`IAE_PSO`, `IAE_EA`, ... `ITSE_Bat`). Each sheet:
 
-- **Top-left:** metric, algorithm, reference, Kp/Ki/Kd, run/wait time.
+- **Top-left:** metric, algorithm, reference, Kp/Ki/Kd, run/wait time,
+  sampling frequency.
 - **Below that:** achieved **IAE / ITAE / ISE / ITSE** computed from the
-  measured run.
+  measured run, then the **Sampling validation** block (requested vs achieved
+  frequency, deviation %, max period, OK/WARNING status).
 - **Right — a 2×2 graph grid:**
   - top row (**measured**): *Motor Speed vs Time* (with the reference line) and
     *Motor Voltage vs Time*;
@@ -219,9 +234,17 @@ see the exact layout before touching hardware.
   runner uses the same pins/PID as your validated `motor_control.py`, run from
   `fred-venv` which reuses the apt `RPi.GPIO`; if `motor_control.py` turns the
   motor and this doesn't, capture the listener output and compare.
-- **Reference / run time / wait time are the same for all 12 experiments**
-  (set once in the app). The motor is driven to 0 % during the wait between
-  experiments and on shutdown.
+- **Reference / run time / wait time / sampling frequency are the same for all
+  12 experiments** (set once in the app). The motor is driven to 0 % during the
+  wait between experiments and on shutdown.
+- **`Sampling WARNING` in the log / results sheet.** The Pi could not hold the
+  requested loop rate (achieved frequency more than 5% off, or too many slow
+  periods). Encoder reads over SPI plus the PID math take ~a few ms per
+  iteration, so very high frequencies (say, above a few hundred Hz) are not
+  reachable; drop the frequency and rerun. The listener prints the same
+  requested-vs-achieved numbers per experiment on the Pi.
+- **Excel files stay out of the repo** (`.gitignore` blocks `*.xlsx`);
+  `Example.xlsx` is the one tracked exception, kept as the sample input.
 - **Can't connect from the laptop?** Confirm you're on the `FrED_AP` network,
   the listener is running, and try `ping 192.168.4.1`. The firewall on the Pi
   is off by default on Bookworm; if you enabled one, allow TCP 5001.

@@ -14,10 +14,11 @@ DEFAULT_PORT = 5001
 
 
 def run_job(host, port, run_time, wait_time, reference, experiments,
-            on_progress=None, on_result=None, timeout=None):
+            sample_rate=50.0, on_progress=None, on_result=None, timeout=None):
     """
     Connect, send the job, and pump incoming messages through callbacks.
 
+    sample_rate            -> control-loop / sampling frequency in Hz
     on_progress(msg_dict)  -> called for each 'progress' message
     on_result(msg_dict)    -> called for each 'result' message
     Returns the list of result dicts (in the order received).
@@ -29,6 +30,7 @@ def run_job(host, port, run_time, wait_time, reference, experiments,
         "run_time": run_time,
         "wait_time": wait_time,
         "reference": reference,
+        "sample_rate": sample_rate,
         "experiments": experiments,
     }
 

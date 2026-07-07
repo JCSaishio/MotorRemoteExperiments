@@ -40,7 +40,8 @@ SLAVE_SELECT_ENC       = 1
 PWM_PIN                = 5
 DC_FREQ                = 1000       # Hz
 PULSES_PER_REVOLUTION  = 4704
-SAMPLE_TIME            = 0.02       # s -> 50 Hz control loop (as motor_control.py)
+SAMPLE_TIME            = 0.02       # s -> 50 Hz default control loop (as motor_control.py)
+DEFAULT_SAMPLE_RATE    = 1.0 / SAMPLE_TIME   # Hz, used when the job doesn't send one
 MOTOR_PWM_CEILING      = 100        # % duty cycle ceiling
 
 # robustness guards borrowed from the proven spooler.py
@@ -161,7 +162,8 @@ class MotorHardware:
         GPIO.cleanup()
 
 
-def run_experiment(hw, kp, ki, kd, reference, run_time, progress_cb=None):
+def run_experiment(hw, kp, ki, kd, reference, run_time,
+                   sample_rate=DEFAULT_SAMPLE_RATE, progress_cb=None):
     """
     Run one closed-loop PID experiment for `run_time` seconds.
 
@@ -169,10 +171,12 @@ def run_experiment(hw, kp, ki, kd, reference, run_time, progress_cb=None):
     kp, ki, kd  : PID gains
     reference   : rpm setpoint held for the whole run
     run_time    : experiment duration in seconds
+    sample_rate : control-loop / sampling frequency in Hz (default 50)
     progress_cb : optional callable(current_time) for occasional updates
 
     Returns a dict of equal-length lists ready for JSON transport.
     """
+    sample_time = 1.0 / float(sample_rate)
     hw.clear_encoder_count()
 
     time_data          = []
@@ -190,7 +194,7 @@ def run_experiment(hw, kp, ki, kd, reference, run_time, progress_cb=None):
     error_sum         = 0.0
 
     tstart     = time.perf_counter()
-    match_time = SAMPLE_TIME
+    match_time = sample_time
     next_note  = 1.0
 
     # Prime the previous position from a real read so the first speed sample is
@@ -242,10 +246,10 @@ def run_experiment(hw, kp, ki, kd, reference, run_time, progress_cb=None):
                 progress_cb(current_time)
                 next_note += 1.0
 
-            # 5) hold 50 Hz cadence
+            # 5) hold the requested sampling cadence
             wait = max(0, match_time - current_time)
             time.sleep(wait)
-            match_time += SAMPLE_TIME
+            match_time += sample_time
     finally:
         hw.motor_off()
 

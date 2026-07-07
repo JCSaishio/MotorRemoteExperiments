@@ -1,9 +1,11 @@
 """Build '[UploadedName]_ExperimentalResults.xlsx'.
 
 One sheet per experiment. Each sheet:
-  - header block (metric, algorithm, reference, gains, run/wait time) at top-left
+  - header block (metric, algorithm, reference, gains, run/wait time, sampling
+    frequency) at top-left
   - achieved performance (IAE/ITAE/ISE/ITSE computed from the measured run)
     directly beneath it
+  - sampling validation (requested vs achieved frequency) beneath that
   - the two graphs (motor speed vs time, motor voltage vs time) pinned to the
     upper-right, next to that block
   - the full data table below
@@ -22,13 +24,14 @@ from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.drawing.image import Image as XLImage
 
 import plant_model
+import sampling_validator
 
 
 DATA_HEADERS = ["time [s]", "rpm", "rpm_ref", "motor_input",
                 "PWM [%]", "voltage [V]", "rpm_raw"]
 DATA_KEYS    = ["time", "rpm", "rpm_ref", "motor_input", "pwm", "voltage", "rpm_raw"]
 
-DATA_HEADER_ROW = 19             # row where the data-table header goes (cols A-G)
+DATA_HEADER_ROW = 26             # row where the data-table header goes (cols A-G)
 # 2x2 graph grid to the right of the header/data (cols I & Q), measured on top,
 # expected (model) below.
 IMG_ANCHOR_SPEED       = "I1"    # measured motor speed
@@ -115,6 +118,7 @@ def _write_sheet(ws, result, model=None):
         ("Kd",                   result["kd"]),
         ("Run time [s]",         result.get("run_time")),
         ("Wait time [s]",        result.get("wait_time")),
+        ("Sampling freq [Hz]",   result.get("sample_rate")),
     ]
     r = 3
     for label, value in info:
@@ -133,6 +137,31 @@ def _write_sheet(ws, result, model=None):
         ws.cell(row=r, column=1, value=key).font = LABEL_FONT
         ws.cell(row=r, column=2, value=round(metrics[key], 4))
         r += 1
+
+    # ---- sampling validation ----
+    sample_rate = result.get("sample_rate")
+    if sample_rate:
+        stats = sampling_validator.analyze(data["time"], sample_rate)
+        r += 1  # blank spacer
+        c = ws.cell(row=r, column=1, value="Sampling validation")
+        c.font = LABEL_FONT
+        c.fill = SECTION_FILL
+        ws.cell(row=r, column=2).fill = SECTION_FILL
+        r += 1
+        rows = [
+            ("Requested freq [Hz]", round(stats["requested_hz"], 2)),
+            ("Achieved freq [Hz]",  round(stats["actual_hz"], 2)),
+            ("Deviation [%]",       round(stats["deviation_pct"], 2)),
+            ("Max period [ms]",     round(stats["max_dt"] * 1000, 2)),
+            ("Status",              "OK" if stats["ok"] else "WARNING"),
+        ]
+        for label, value in rows:
+            ws.cell(row=r, column=1, value=label).font = LABEL_FONT
+            cell = ws.cell(row=r, column=2, value=value)
+            if label == "Status":
+                cell.font = Font(bold=True,
+                                 color="006100" if stats["ok"] else "9C0006")
+            r += 1
 
     # ---- measured graphs (top row of the grid) ----
     speed_png = _make_chart_png(

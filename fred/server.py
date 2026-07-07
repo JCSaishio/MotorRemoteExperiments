@@ -36,10 +36,12 @@ def handle(conn, addr):
     run_time    = float(job["run_time"])
     wait_time   = float(job["wait_time"])
     reference   = float(job["reference"])
+    sample_rate = float(job.get("sample_rate", er.DEFAULT_SAMPLE_RATE))
     experiments = job["experiments"]
     total       = len(experiments)
 
-    print(f"  job: {total} experiments | run={run_time}s wait={wait_time}s ref={reference} rpm")
+    print(f"  job: {total} experiments | run={run_time}s wait={wait_time}s "
+          f"ref={reference} rpm | fs={sample_rate} Hz")
 
     hw = er.MotorHardware()
     try:
@@ -54,14 +56,22 @@ def handle(conn, addr):
             data = er.run_experiment(
                 hw,
                 float(exp["kp"]), float(exp["ki"]), float(exp["kd"]),
-                reference, run_time)
+                reference, run_time, sample_rate=sample_rate)
 
             # diagnostics: if the motor never turned, PWM stayed ~0
             pwm = data.get("pwm") or [0]
             rpm = data.get("rpm") or [0]
+            t   = data.get("time") or []
+            actual_hz = ((len(t) - 1) / (t[-1] - t[0])
+                         if len(t) > 1 and t[-1] > t[0] else 0.0)
             print(f"    samples={len(data['time'])}  "
+                  f"fs requested={sample_rate:.1f} Hz achieved={actual_hz:.1f} Hz  "
                   f"PWM max={max(pwm):.1f}% min={min(pwm):.1f}%  "
                   f"rpm final={rpm[-1]:.1f} max={max(rpm):.1f}")
+            if sample_rate > 0 and abs(actual_hz - sample_rate) / sample_rate > 0.05:
+                print(f"    WARNING: achieved sampling rate is more than 5% off "
+                      f"the requested {sample_rate:.1f} Hz (loop can't keep up "
+                      f"or is being throttled).")
             if max(pwm) <= 0:
                 print("    WARNING: PWM stayed at 0% - motor was never driven "
                       "(check reference > 0 and encoder/SPI wiring).")
@@ -75,6 +85,7 @@ def handle(conn, addr):
                 "reference": reference,
                 "run_time": run_time,
                 "wait_time": wait_time,
+                "sample_rate": sample_rate,
                 "data": data,
             })
 
